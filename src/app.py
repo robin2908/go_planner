@@ -163,42 +163,47 @@ def calc_coord_y(row):
         coord_y = 64 + 128* row["island_y"] + row["offsety"]
     return coord_y
 
-def calc_go_plan_of_alliance(alliance_name, target_city_id, worldspeed, df_towns, df_unitspeed ,dict_modifiers):
-    result = df_towns.query(f'alliance_name == "{alliance_name}"')
+def calc_go_plan_of_alliance(alliance_names: list, target_city_id, worldspeed, df_towns, df_unitspeed ,dict_modifiers):
 
     df_traveltimes = pd.DataFrame(
         columns=['Stadtname', 'StadtId', 'Stadtinfo', 'Spielername', 'Kolo in s', 'Kolo', 'MD', 'FS', 'lahme Bremse'])
 
-    for row in result.iterrows():
-        row = row[1]
-        traveltime_kolo, traveltime_str_kolo = calculate_traveltime(row['id'], target_city_id, "Kolonieschiff",
-                                                                                worldspeed, df_towns, df_unitspeed,
-                                                                                dict_modifiers)
-        traveltime_md, traveltime_str_md = calculate_traveltime(row['id'], target_city_id, "Bireme", worldspeed,
-                                                                            df_towns, df_unitspeed, dict_modifiers)
-        traveltime_fs, traveltime_str_fs = calculate_traveltime(row['id'], target_city_id, "Feuerschiff", worldspeed,
-                                                                            df_towns, df_unitspeed, dict_modifiers)
-        traveltime_lahme_bremse, traveltime_str_lahme_bremse = calculate_traveltime(row['id'], target_city_id,
-                                                                                                "Transportboot",
-                                                                                                worldspeed, df_towns,
-                                                                                                df_unitspeed,
-                                                                                                dict_modifiers)
-        new_data = [
-            {
-                'Stadtname': row['name'],
-                'StadtId': row['id'],
-                'Stadtinfo': row['unit_info'],
-                'Spielername': row['player_name'],
-                'Kolo in s': traveltime_kolo,
-                'Kolo': traveltime_str_kolo,
-                'MD': traveltime_str_md,
-                'FS': traveltime_str_fs,
-                'lahme Bremse': traveltime_str_lahme_bremse,
-                'BBCode': f'[town]{row["id"]}[/town]',
-            }
-        ]
-        df_traveltimes = pd.concat([df_traveltimes, pd.DataFrame(new_data)], ignore_index=True)
+    for alliance_name in alliance_names:
+        result = df_towns.query(f'alliance_name == "{alliance_name}"')
+
+        for row in result.iterrows():
+            row = row[1]
+            traveltime_kolo, traveltime_str_kolo = calculate_traveltime(row['id'], target_city_id, "Kolonieschiff",
+                                                                                    worldspeed, df_towns, df_unitspeed,
+                                                                                    dict_modifiers)
+            traveltime_md, traveltime_str_md = calculate_traveltime(row['id'], target_city_id, "Bireme", worldspeed,
+                                                                                df_towns, df_unitspeed, dict_modifiers)
+            traveltime_fs, traveltime_str_fs = calculate_traveltime(row['id'], target_city_id, "Feuerschiff", worldspeed,
+                                                                                df_towns, df_unitspeed, dict_modifiers)
+            traveltime_lahme_bremse, traveltime_str_lahme_bremse = calculate_traveltime(row['id'], target_city_id,
+                                                                                                    "Transportboot",
+                                                                                                    worldspeed, df_towns,
+                                                                                                    df_unitspeed,
+                                                                                                    dict_modifiers)
+            new_data = [
+                {
+                    'Stadtname': row['name'],
+                    'StadtId': row['id'],
+                    'Stadtinfo': row['unit_info'],
+                    'Spielername': row['player_name'],
+                    'Kolo in s': traveltime_kolo,
+                    'Kolo': traveltime_str_kolo,
+                    'MD': traveltime_str_md,
+                    'FS': traveltime_str_fs,
+                    'lahme Bremse': traveltime_str_lahme_bremse,
+                    'BBCode': f'[town]{row["id"]}[/town]',
+                }
+            ]
+            df_traveltimes = pd.concat([df_traveltimes, pd.DataFrame(new_data)], ignore_index=True)
+
     df_traveltimes = df_traveltimes.sort_values(by='Kolo in s')
+    # Neue Spalte 'Nummerierung' hinzufügen und DataFrame durchnummerieren
+    df_traveltimes['Nummerierung'] = df_traveltimes.reset_index().index + 1
 
     return df_traveltimes
 
@@ -242,8 +247,14 @@ app.layout = html.Div([
             dcc.Input(id='worldspeed-input', type='number', placeholder='Weltgeschwindigkeit', value=1),
         ]),
         html.Div([
-            html.Label('Allianzname:'),
-            dcc.Input(id='allianz-input', type='text', placeholder='Allianzname'),
+            # Dropdown-Menü für Allianznamen
+            html.Label('Allianzname'),
+            dcc.Dropdown(
+                id='allianz-input',
+                options=[{'label': alliance_name, 'value': alliance_name} for alliance_name in df_towns['alliance_name'].unique()],
+                value=[],  # Initialwert ist eine leere Liste
+                multi=True  # Mehrfachauswahl aktivieren
+            ),
         ]),
         html.Div([
             html.Label('StadtId:'),
@@ -259,6 +270,7 @@ app.layout = html.Div([
             dash_table.DataTable(
                 id='table',
                 columns=[
+                    {'name': 'Nummerierung', 'id': 'Nummerierung'},
                     {'name': 'Stadtname', 'id': 'Stadtname'},
                     {'name': 'StadtId', 'id': 'StadtId'},
                     {'name': 'Stadtinfo', 'id': 'Stadtinfo'},
@@ -270,14 +282,15 @@ app.layout = html.Div([
                     {'name': 'lahme Bremse', 'id': 'lahme Bremse'}
                 ],
                 data=[],
-                style_table={'height': '400px', 'overflowY': 'auto'},
+                style_table={'height': '100%', 'overflowY': 'auto'},
                 style_header={
                     'backgroundColor': 'white',
                     'fontWeight': 'bold'
                 },
+                filter_action='native',  # Aktiviere das Filtern
             )
         ],
-        style={'width': '49%', 'display': 'inline-block'}
+        style={'width': '49%', 'height': 'calc(100vh - 220px)', 'display': 'flex', 'float': 'left'}
     ),
 
     # Rechts unten: Container für die Tabelle (identisch zum table-container)
@@ -287,6 +300,7 @@ app.layout = html.Div([
             dash_table.DataTable(
                 id='table-right',
                 columns=[
+                    {'name': 'Nummerierung', 'id': 'Nummerierung'},
                     {'name': 'Stadtname', 'id': 'Stadtname'},
                     {'name': 'StadtId', 'id': 'StadtId'},
                     {'name': 'Stadtinfo', 'id': 'Stadtinfo'},
@@ -298,16 +312,16 @@ app.layout = html.Div([
                     {'name': 'lahme Bremse', 'id': 'lahme Bremse'}
                 ],
                 data=[],
-                style_table={'height': '400px', 'overflowY': 'auto'},
+                style_table={'height': '100%', 'overflowY': 'auto'},
                 style_header={
                     'backgroundColor': 'white',
                     'fontWeight': 'bold'
                 },
+                filter_action='native',  # Aktiviere das Filtern
             )
         ],
-        style={'width': '49%', 'display': 'inline-block'}
+        style={'width': '49%', 'height': 'calc(100vh - 220px)', 'display': 'flex', 'float': 'left'}
     )
-
 ])
 
 # Callback-Funktion für die Aktualisierung der Tabelle
@@ -321,7 +335,7 @@ app.layout = html.Div([
      dash.dependencies.State('worldspeed-input', 'value'),
      dash.dependencies.State('checkboxes', 'value')]
 )
-def update_table(n_clicks, alliance_name, target_city_id, atalanta_stufe, anzahl_sirenen, worldspeed, checkbox_values):
+def update_table(n_clicks, alliance_names, target_city_id, atalanta_stufe, anzahl_sirenen, worldspeed, checkbox_values):
     # Rufen Sie die Funktion calc_go_plan_of_alliance mit den entsprechenden Argumenten auf
     dict_modifiers = {
         'Atalanta Stufe': atalanta_stufe,
@@ -332,12 +346,13 @@ def update_table(n_clicks, alliance_name, target_city_id, atalanta_stufe, anzahl
         'Verbesserte Truppenbewegung': 'Verbesserte Truppenbewegung' in checkbox_values,
         'Leuchtturm': 'Leuchtturm' in checkbox_values
     }
-    result_df = calc_go_plan_of_alliance(alliance_name, target_city_id, worldspeed, df_towns, df_unitspeed, dict_modifiers)
+    result_df = calc_go_plan_of_alliance(alliance_names, target_city_id, worldspeed, df_towns, df_unitspeed, dict_modifiers)
 
     # Erstellen der aktualisierten Tabelle
     table = dash_table.DataTable(
         id='table',
         columns=[
+            {'name': 'Nummerierung', 'id': 'Nummerierung'},
             {'name': 'Stadtname', 'id': 'Stadtname', 'type': 'text'},
             {'name': 'StadtId', 'id': 'StadtId', 'type': 'numeric'},
             {'name': 'Stadtinfo', 'id': 'Stadtinfo', 'type': 'text'},
@@ -350,14 +365,15 @@ def update_table(n_clicks, alliance_name, target_city_id, atalanta_stufe, anzahl
             {'name': 'BBCode', 'id': 'BBCode', 'type': 'text'},
         ],
         data=result_df.to_dict('records'),
-        style_table={'height': '400px', 'overflowY': 'auto'},
+        style_table={'height': '100%', 'overflowY': 'auto'},
         style_header={
             'backgroundColor': 'white',
             'fontWeight': 'bold'
         },
+        filter_action='native',  # Aktiviere das Filtern
     )
 
     return table, table
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)
